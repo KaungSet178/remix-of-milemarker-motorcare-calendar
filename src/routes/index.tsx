@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 import { actions, computeDue, useStore, KIND_LABEL, fmtKm } from "@/lib/store";
 import { Shell, Field, btn, btnGhost, StatusPill, KindIcon, DueLine } from "@/components/ui-kit";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -93,6 +94,7 @@ function AddVehicle({ onDone, first }: { onDone: () => void; first: boolean }) {
       onSubmit={(e) => {
         e.preventDefault();
         actions.addVehicle({ type: f.type, model: f.model.trim(), plate: f.plate.trim().toUpperCase(), mileage: Number(f.mileage) || 0 });
+        toast.success(`${f.model.trim()} added to your garage`);
         setF({ type: "Sedan", model: "", plate: "", mileage: "" });
         onDone();
       }}

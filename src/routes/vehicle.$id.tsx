@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Trash2, Settings2 } from "lucide-react";
 import { actions, computeDue, useStore, KIND_LABEL, fmtDate, fmtKm, today, type ServiceKind, type Vehicle } from "@/lib/store";
 import { Shell, Field, btn, btnGhost, StatusPill, KindIcon, DueLine } from "@/components/ui-kit";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/vehicle/$id")({
   head: () => ({
@@ -80,7 +81,7 @@ function VehiclePage() {
                   <p className="text-sm text-muted-foreground">{fmtDate(r.date)} · {fmtKm(r.mileage)}</p>
                   {r.notes && <p className="truncate text-sm text-muted-foreground">{r.notes}</p>}
                 </div>
-                <button aria-label="Delete record" className="p-2 text-muted-foreground" onClick={() => confirm("Delete this record?") && actions.deleteRecord(r.id)}><Trash2 className="h-4 w-4" /></button>
+                <button aria-label="Delete record" className="p-2 text-muted-foreground" onClick={() => { if (confirm("Delete this record?")) { actions.deleteRecord(r.id); toast.success("Record deleted"); } }}><Trash2 className="h-4 w-4" /></button>
               </li>
             ))}
           </ul>
@@ -93,7 +94,7 @@ function VehiclePage() {
 function MileageUpdate({ v }: { v: Vehicle }) {
   const [km, setKm] = useState("");
   return (
-    <form className="flex items-end gap-2 rounded-2xl border bg-card p-4" onSubmit={(e) => { e.preventDefault(); if (km) { actions.updateVehicle(v.id, { mileage: Number(km) }); setKm(""); } }}>
+    <form className="flex items-end gap-2 rounded-2xl border bg-card p-4" onSubmit={(e) => { e.preventDefault(); if (km) { actions.updateVehicle(v.id, { mileage: Number(km) }); setKm(""); toast.success(`Odometer updated to ${fmtKm(Number(km))}`); } }}>
       <div className="flex-1"><Field label={`Odometer · now ${fmtKm(v.mileage)}`} type="number" inputMode="numeric" placeholder="Update mileage" value={km} onChange={(e) => setKm(e.target.value)} /></div>
       <button className={btnGhost}>Update</button>
     </form>
@@ -103,7 +104,7 @@ function MileageUpdate({ v }: { v: Vehicle }) {
 function RecordForm({ v, kind, onDone }: { v: Vehicle; kind: ServiceKind; onDone: () => void }) {
   const [f, setF] = useState({ date: today(), mileage: String(v.mileage), product: "", notes: "" });
   return (
-    <form className="space-y-3 rounded-2xl border-2 border-primary bg-card p-5" onSubmit={(e) => { e.preventDefault(); actions.addRecord({ vehicleId: v.id, kind, date: f.date, mileage: Number(f.mileage), product: f.product.trim(), notes: f.notes.trim() || undefined }); onDone(); }}>
+    <form className="space-y-3 rounded-2xl border-2 border-primary bg-card p-5" onSubmit={(e) => { e.preventDefault(); actions.addRecord({ vehicleId: v.id, kind, date: f.date, mileage: Number(f.mileage), product: f.product.trim(), notes: f.notes.trim() || undefined }); toast.success(`${KIND_LABEL[kind]} change recorded`); onDone(); }}>
       <h3 className="flex items-center gap-2 font-display text-lg font-bold"><KindIcon kind={kind} /> Record {KIND_LABEL[kind].toLowerCase()} change</h3>
       <Field label="Replacement date" type="date" value={f.date} max={today()} onChange={(e) => setF({ ...f, date: e.target.value })} required />
       <Field label="Mileage at service (km)" type="number" inputMode="numeric" value={f.mileage} onChange={(e) => setF({ ...f, mileage: e.target.value })} required />
@@ -115,22 +116,43 @@ function RecordForm({ v, kind, onDone }: { v: Vehicle; kind: ServiceKind; onDone
 }
 
 function Intervals({ v, onDelete }: { v: Vehicle; onDelete: () => void }) {
-  const set = (k: ServiceKind, key: "km" | "months", val: string) =>
-    actions.updateVehicle(v.id, { intervals: { ...v.intervals, [k]: { ...v.intervals[k], [key]: Math.max(1, Number(val) || 1) } } });
+  const set = (k: ServiceKind, key: "km" | "months", val: number) => {
+    actions.updateVehicle(v.id, { intervals: { ...v.intervals, [k]: { ...v.intervals[k], [key]: val } } });
+    toast.success("Intervals updated");
+  };
   return (
     <div className="space-y-4 rounded-2xl border bg-card p-5">
       <h3 className="font-display text-lg font-bold">Service intervals</h3>
-      <p className="text-sm text-muted-foreground">Next service is due at whichever comes first.</p>
+      <p className="text-sm text-muted-foreground">Next service is due at whichever comes first. Values save when you leave a field.</p>
       {(["oil", "tire"] as const).map((k) => (
         <div key={k}>
           <p className="mb-2 flex items-center gap-1.5 font-semibold"><KindIcon kind={k} /> {KIND_LABEL[k]}</p>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Every km" type="number" value={v.intervals[k].km} onChange={(e) => set(k, "km", e.target.value)} />
-            <Field label="Every months" type="number" value={v.intervals[k].months} onChange={(e) => set(k, "months", e.target.value)} />
+            <IntervalInput label="Every km" value={v.intervals[k].km} onCommit={(n) => set(k, "km", n)} />
+            <IntervalInput label="Every months" value={v.intervals[k].months} onCommit={(n) => set(k, "months", n)} />
           </div>
         </div>
       ))}
       <button className="flex items-center gap-2 text-sm font-medium text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /> Delete vehicle</button>
     </div>
+  );
+}
+
+function IntervalInput({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Field
+      label={label}
+      type="number"
+      inputMode="numeric"
+      min={1}
+      value={draft ?? String(value)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft === null) return;
+        onCommit(Math.max(1, Number(draft) || 1));
+        setDraft(null);
+      }}
+    />
   );
 }
