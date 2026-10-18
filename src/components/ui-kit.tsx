@@ -42,7 +42,7 @@ export function Field({ label, ...p }: { label: string } & InputHTMLAttributes<H
   return (
     <label className="block space-y-1">
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-      <input {...p} className="w-full rounded-lg border bg-background px-3 py-2.5 text-base outline-none focus:border-primary" />
+      <input {...p} className="w-full rounded-lg border bg-background px-3 py-2.5 text-base outline-none focus:border-primary focus:ring-2 focus:ring-ring/30" />
     </label>
   );
 }
@@ -50,7 +50,7 @@ export function SelectField({ label, children, ...p }: { label: string; children
   return (
     <label className="block space-y-1">
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-      <select {...p} className="w-full rounded-lg border bg-background px-3 py-2.5 text-base outline-none focus:border-primary">
+      <select {...p} className="w-full rounded-lg border bg-background px-3 py-2.5 text-base outline-none focus:border-primary focus:ring-2 focus:ring-ring/30">
         {children}
       </select>
     </label>

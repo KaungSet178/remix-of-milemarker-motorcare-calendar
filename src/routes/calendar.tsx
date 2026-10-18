@@ -53,7 +53,14 @@ function CalendarPage() {
         <div className="mb-3 flex items-center justify-between">
           <button aria-label="Previous month" onClick={() => shift(-1)} className="p-2"><ChevronLeft className="h-5 w-5" /></button>
           <p className="font-display font-bold">{first.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</p>
-          <button aria-label="Next month" onClick={() => shift(1)} className="p-2"><ChevronRight className="h-5 w-5" /></button>
+          <div className="flex items-center gap-1">
+            {cursor !== t.slice(0, 7) && (
+              <button onClick={() => { setCursor(t.slice(0, 7)); setSelected(t); }} className="rounded-md px-2 py-1 text-xs font-semibold text-primary">
+                Today
+              </button>
+            )}
+            <button aria-label="Next month" onClick={() => shift(1)} className="p-2"><ChevronRight className="h-5 w-5" /></button>
+          </div>
         </div>
         <div className="grid grid-cols-7 text-center text-xs text-muted-foreground">
           {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={i} className="py-1">{d}</span>)}
@@ -63,7 +70,13 @@ function CalendarPage() {
             if (!c) return <span key={i} />;
             const evs = events.filter((e) => e.date === c);
             return (
-              <button key={c} onClick={() => setSelected(c)} className={`flex aspect-square flex-col items-center justify-center rounded-lg text-sm ${selected === c ? "bg-primary text-primary-foreground" : c === t ? "bg-muted font-bold" : ""}`}>
+              <button
+                key={c}
+                onClick={() => setSelected(c)}
+                aria-label={`${fmtDate(c)}${evs.length ? `, ${evs.length} event${evs.length > 1 ? "s" : ""}` : ""}`}
+                aria-pressed={selected === c}
+                className={`flex aspect-square flex-col items-center justify-center rounded-lg text-sm ${selected === c ? "bg-primary text-primary-foreground" : c === t ? "bg-muted font-bold" : ""}`}
+              >
                 {Number(c.slice(8))}
                 <span className="mt-0.5 flex h-1.5 gap-0.5">
                   {evs.slice(0, 3).map((e, j) => <span key={j} className={`h-1.5 w-1.5 rounded-full ${e.overdue ? "bg-destructive" : e.upcoming ? "bg-warning" : "bg-success"}`} />)}
