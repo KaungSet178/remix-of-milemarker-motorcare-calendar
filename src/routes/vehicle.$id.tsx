@@ -1,17 +1,57 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Trash2, Settings2 } from "lucide-react";
-import { actions, computeDue, useStore, KIND_LABEL, fmtDate, fmtKm, today, type ServiceKind, type Vehicle } from "@/lib/store";
-import { Shell, Field, btn, btnGhost, StatusPill, KindIcon, DueLine } from "@/components/ui-kit";
+import {
+  MoreVertical,
+  Pencil,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  Settings2,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
+import {
+  actions,
+  computeDue,
+  useStore,
+  fmtKm,
+  vehicleName,
+  type MaintenanceItem,
+  type Vehicle,
+} from "@/lib/store";
+import {
+  Shell,
+  Field,
+  btn,
+  btnGhost,
+  StatusPill,
+  ItemIcon,
+  DueLine,
+  ConfirmDialog,
+} from "@/components/ui-kit";
+import { VehicleForm, RecordDialog, ItemDialog } from "@/components/forms";
+import { HistoryList } from "@/components/history";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/vehicle/$id")({
   head: () => ({
     meta: [
-      { title: "Vehicle maintenance — Oil & Tire Tracker" },
-      { name: "description", content: "Record oil and tire changes and see when the next service is due." },
-      { property: "og:title", content: "Vehicle maintenance — Oil & Tire Tracker" },
-      { property: "og:description", content: "Record oil and tire changes and see when the next service is due." },
+      { title: "Vehicle maintenance — Vehicle Maintenance Tracker" },
+      {
+        name: "description",
+        content: "Log completed services and see when the next maintenance is due.",
+      },
+      { property: "og:title", content: "Vehicle maintenance — Vehicle Maintenance Tracker" },
+      {
+        property: "og:description",
+        content: "Log completed services and see when the next maintenance is due.",
+      },
     ],
   }),
   component: VehiclePage,
@@ -19,140 +59,225 @@ export const Route = createFileRoute("/vehicle/$id")({
 
 function VehiclePage() {
   const { id } = Route.useParams();
-  const { vehicles, records } = useStore();
+  const { vehicles, items, records, settings } = useStore();
   const nav = useNavigate();
   const v = vehicles.find((x) => x.id === id);
-  const [form, setForm] = useState<ServiceKind | null>(null);
-  const [settings, setSettings] = useState(false);
-  const [filter, setFilter] = useState<"all" | ServiceKind>("all");
+  const [recording, setRecording] = useState<MaintenanceItem | null>(null);
+  const [itemEdit, setItemEdit] = useState<MaintenanceItem | "new" | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [filter, setFilter] = useState<string>("all");
 
-  if (!v) return <Shell title="Vehicle" back><p className="text-muted-foreground">Vehicle not found.</p></Shell>;
-  const history = records
-    .filter((r) => r.vehicleId === v.id && (filter === "all" || r.kind === filter))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  if (!v)
+    return (
+      <Shell title="Vehicle" back>
+        <p className="text-muted-foreground">Vehicle not found.</p>
+      </Shell>
+    );
+
+  const vItems = items.filter((i) => i.vehicleId === v.id);
+  const vRecords = records.filter((r) => r.vehicleId === v.id);
+  const history = vRecords.filter((r) => filter === "all" || r.itemId === filter);
+  const name = vehicleName(v);
 
   return (
-    <Shell title={v.model} back action={<button aria-label="Settings" onClick={() => setSettings(!settings)} className="p-2 text-muted-foreground"><Settings2 className="h-5 w-5" /></button>}>
-      <div className="flex items-center justify-between">
-        <span className="rounded bg-plate px-2 py-0.5 font-mono font-bold text-plate-foreground">{v.plate}</span>
-        <span className="text-sm text-muted-foreground">{v.type}</span>
-      </div>
+    <Shell
+      title={name}
+      back
+      action={
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Vehicle options"
+            className="rounded-md p-2 text-muted-foreground hover:bg-muted"
+          >
+            <MoreVertical className="h-5 w-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setEditing(true)}>
+              <Pencil className="h-4 w-4" /> Edit vehicle
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                actions.updateVehicle(v.id, { archived: !v.archived });
+                toast.success(
+                  v.archived
+                    ? `${name} restored`
+                    : `${name} archived — reminders paused, history kept`,
+                );
+                if (!v.archived) nav({ to: "/" });
+              }}
+            >
+              {v.archived ? (
+                <ArchiveRestore className="h-4 w-4" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}{" "}
+              {v.archived ? "Restore" : "Archive"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-4 w-4" /> Delete vehicle
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      }
+    >
+      {v.archived && (
+        <p className="rounded-xl bg-muted p-3 text-sm">
+          This vehicle is archived. Reminders are paused; restore it from the menu.
+        </p>
+      )}
+
+      {editing ? (
+        <VehicleForm vehicle={v} onDone={() => setEditing(false)} />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>{v.type}</span>
+          {v.year && <span>· {v.year}</span>}
+          {v.nickname && (
+            <span>
+              · {v.make} {v.model}
+            </span>
+          )}
+          {v.plate && (
+            <span className="rounded bg-plate px-2 py-0.5 font-mono font-bold text-plate-foreground">
+              {v.plate}
+            </span>
+          )}
+        </div>
+      )}
 
       <MileageUpdate v={v} />
 
-      {settings && <Intervals v={v} onDelete={() => { if (confirm("Delete this vehicle and all its records?")) { actions.deleteVehicle(v.id); nav({ to: "/" }); } }} />}
-
       <div className="grid grid-cols-2 gap-3">
-        {(["oil", "tire"] as const).map((k) => {
-          const d = computeDue(v, records, k);
+        {vItems.map((i) => {
+          const d = computeDue(v, i, records, settings);
           return (
-            <div key={k} className="space-y-2 rounded-2xl border bg-card p-4 shadow-card">
-              <div className="flex items-center gap-1.5 font-semibold"><KindIcon kind={k} /> {KIND_LABEL[k]}</div>
+            <div
+              key={i.id}
+              className="flex flex-col gap-2 rounded-2xl border bg-card p-4 shadow-card"
+            >
+              <div className="flex items-start justify-between gap-1">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <ItemIcon type={i.type} /> {i.title}
+                </span>
+                <button
+                  aria-label={`${i.title} schedule`}
+                  className="-m-1 p-1 text-muted-foreground"
+                  onClick={() => setItemEdit(i)}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </button>
+              </div>
               <StatusPill status={d.status} />
-              <DueLine d={d} />
-              <button className={`${btn} w-full text-sm`} onClick={() => setForm(k)}>+ Record</button>
+              <div className="flex-1">
+                <DueLine d={d} />
+              </div>
+              <button className={`${btn} w-full text-sm`} onClick={() => setRecording(i)}>
+                <Plus className="h-4 w-4" /> Record
+              </button>
             </div>
           );
         })}
+        <button
+          className="flex min-h-32 flex-col items-center justify-center gap-1 rounded-2xl border border-dashed p-4 text-sm font-medium text-muted-foreground"
+          onClick={() => setItemEdit("new")}
+        >
+          <Plus className="h-5 w-5" /> Add item
+          <span className="text-xs font-normal">Brakes, battery, fluids…</span>
+        </button>
       </div>
 
-      {form && <RecordForm v={v} kind={form} onDone={() => setForm(null)} />}
-
       <section>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">History</h2>
-          <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
-            {(["all", "oil", "tire"] as const).map((f) => (
-              <button key={f} onClick={() => setFilter(f)} className={`rounded-md px-2.5 py-1 ${filter === f ? "bg-card font-semibold shadow-card" : "text-muted-foreground"}`}>
-                {f === "all" ? "All" : KIND_LABEL[f]}
+          <div
+            className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 text-xs"
+            role="group"
+            aria-label="Filter history"
+          >
+            {[{ id: "all", title: "All" }, ...vItems].map((f) => (
+              <button
+                key={f.id}
+                aria-pressed={filter === f.id}
+                onClick={() => setFilter(f.id)}
+                className={`shrink-0 rounded-md px-2.5 py-1 ${filter === f.id ? "bg-card font-semibold shadow-card" : "text-muted-foreground"}`}
+              >
+                {f.title}
               </button>
             ))}
           </div>
         </div>
-        {history.length === 0 ? (
-          <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No records yet.</p>
-        ) : (
-          <ul className="divide-y rounded-2xl border bg-card">
-            {history.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 p-4">
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${r.kind === "oil" ? "bg-primary/15 text-primary" : "bg-secondary text-secondary-foreground"}`}><KindIcon kind={r.kind} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{r.product || KIND_LABEL[r.kind]}</p>
-                  <p className="text-sm text-muted-foreground">{fmtDate(r.date)} · {fmtKm(r.mileage)}</p>
-                  {r.notes && <p className="truncate text-sm text-muted-foreground">{r.notes}</p>}
-                </div>
-                <button aria-label="Delete record" className="p-2 text-muted-foreground" onClick={() => { if (confirm("Delete this record?")) { actions.deleteRecord(r.id); toast.success("Record deleted"); } }}><Trash2 className="h-4 w-4" /></button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <HistoryList
+          records={history}
+          empty="No service records yet. Tap “Record” on an item to log your last service."
+        />
       </section>
+
+      {recording && (
+        <RecordDialog
+          vehicle={v}
+          item={recording}
+          open
+          onOpenChange={(o) => !o && setRecording(null)}
+        />
+      )}
+      <ItemDialog
+        vehicleId={v.id}
+        item={itemEdit === "new" ? undefined : (itemEdit ?? undefined)}
+        open={itemEdit !== null}
+        onOpenChange={(o) => !o && setItemEdit(null)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${name}?`}
+        description={`This permanently deletes the vehicle, its ${vItems.length} maintenance items and ${vRecords.length} service records. To keep the history, archive it instead.`}
+        confirmLabel="Delete vehicle"
+        onConfirm={() => {
+          actions.deleteVehicle(v.id);
+          toast.success(`${name} deleted`);
+          nav({ to: "/" });
+        }}
+      />
     </Shell>
   );
 }
 
 function MileageUpdate({ v }: { v: Vehicle }) {
   const [km, setKm] = useState("");
+  const [err, setErr] = useState<string>();
   return (
-    <form className="flex items-end gap-2 rounded-2xl border bg-card p-4" onSubmit={(e) => { e.preventDefault(); if (km) { actions.updateVehicle(v.id, { mileage: Number(km) }); setKm(""); toast.success(`Odometer updated to ${fmtKm(Number(km))}`); } }}>
-      <div className="flex-1"><Field label={`Odometer · now ${fmtKm(v.mileage)}`} type="number" inputMode="numeric" placeholder="Update mileage" value={km} onChange={(e) => setKm(e.target.value)} /></div>
-      <button className={btnGhost}>Update</button>
-    </form>
-  );
-}
-
-function RecordForm({ v, kind, onDone }: { v: Vehicle; kind: ServiceKind; onDone: () => void }) {
-  const [f, setF] = useState({ date: today(), mileage: String(v.mileage), product: "", notes: "" });
-  return (
-    <form className="space-y-3 rounded-2xl border-2 border-primary bg-card p-5" onSubmit={(e) => { e.preventDefault(); actions.addRecord({ vehicleId: v.id, kind, date: f.date, mileage: Number(f.mileage), product: f.product.trim(), notes: f.notes.trim() || undefined }); toast.success(`${KIND_LABEL[kind]} change recorded`); onDone(); }}>
-      <h3 className="flex items-center gap-2 font-display text-lg font-bold"><KindIcon kind={kind} /> Record {KIND_LABEL[kind].toLowerCase()} change</h3>
-      <Field label="Replacement date" type="date" value={f.date} max={today()} onChange={(e) => setF({ ...f, date: e.target.value })} required />
-      <Field label="Mileage at service (km)" type="number" inputMode="numeric" value={f.mileage} onChange={(e) => setF({ ...f, mileage: e.target.value })} required />
-      <Field label={kind === "oil" ? "Oil type" : "Tire type"} placeholder={kind === "oil" ? "5W-30 fully synthetic" : "Michelin Primacy 4, 205/55 R16"} value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} />
-      <Field label="Notes (optional)" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
-      <div className="flex gap-2"><button className={`${btn} flex-1`}>Save record</button><button type="button" className={btnGhost} onClick={onDone}>Cancel</button></div>
-    </form>
-  );
-}
-
-function Intervals({ v, onDelete }: { v: Vehicle; onDelete: () => void }) {
-  const set = (k: ServiceKind, key: "km" | "months", val: number) => {
-    actions.updateVehicle(v.id, { intervals: { ...v.intervals, [k]: { ...v.intervals[k], [key]: val } } });
-    toast.success("Intervals updated");
-  };
-  return (
-    <div className="space-y-4 rounded-2xl border bg-card p-5">
-      <h3 className="font-display text-lg font-bold">Service intervals</h3>
-      <p className="text-sm text-muted-foreground">Next service is due at whichever comes first. Values save when you leave a field.</p>
-      {(["oil", "tire"] as const).map((k) => (
-        <div key={k}>
-          <p className="mb-2 flex items-center gap-1.5 font-semibold"><KindIcon kind={k} /> {KIND_LABEL[k]}</p>
-          <div className="grid grid-cols-2 gap-2">
-            <IntervalInput label="Every km" value={v.intervals[k].km} onCommit={(n) => set(k, "km", n)} />
-            <IntervalInput label="Every months" value={v.intervals[k].months} onCommit={(n) => set(k, "months", n)} />
-          </div>
-        </div>
-      ))}
-      <button className="flex items-center gap-2 text-sm font-medium text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /> Delete vehicle</button>
-    </div>
-  );
-}
-
-function IntervalInput({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <Field
-      label={label}
-      type="number"
-      inputMode="numeric"
-      min={1}
-      value={draft ?? String(value)}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft === null) return;
-        onCommit(Math.max(1, Number(draft) || 1));
-        setDraft(null);
+    <form
+      noValidate
+      className="flex items-start gap-2 rounded-2xl border bg-card p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Number(km);
+        if (km.trim() === "" || !Number.isFinite(n) || n < 0)
+          return setErr("Enter a reading of 0 or more");
+        setErr(undefined);
+        actions.updateVehicle(v.id, { mileage: n });
+        setKm("");
+        toast.success(`Odometer updated to ${fmtKm(n)}`);
       }}
-    />
+    >
+      <div className="flex-1">
+        <Field
+          label={`Odometer · ${v.mileage != null ? `now ${fmtKm(v.mileage)}` : "not set"}`}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          placeholder="Update mileage"
+          value={km}
+          onChange={(e) => setKm(e.target.value)}
+          error={err}
+        />
+      </div>
+      <button className={`${btnGhost} mt-5`}>Update</button>
+    </form>
   );
 }
